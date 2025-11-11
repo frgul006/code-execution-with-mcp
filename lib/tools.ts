@@ -1,5 +1,8 @@
 import vm from "node:vm";
 
+import { knowledgeBaseTool, runKnowledgeBaseLookup } from "./mcp/knowledgeBase";
+import { runTodoManager, todoListTool } from "./mcp/todoList";
+
 type SchemaProperty = {
   description: string;
   type: string;
@@ -83,7 +86,9 @@ export const tools: Tool[] = [
     },
     examples: ["{}"],
     categories: ["safety", "observability"]
-  }
+  },
+  knowledgeBaseTool,
+  todoListTool
 ];
 
 export function getTool(toolName: string): Tool | undefined {
@@ -184,12 +189,18 @@ function listCapabilities(): ToolRunResponse {
       bestPractices: [
         "Prefer deterministic, side-effect free snippets",
         "Plan with dry-run before executing untrusted code"
-      ]
+      ],
+      tools: tools.map((tool) => ({
+        name: tool.name,
+        categories: tool.categories,
+        description: tool.description
+      }))
     },
     trace: [
       {
         title: "Describe sandbox",
-        detail: "Returned metadata the orchestrator can use while planning tool calls."
+        detail:
+          "Returned metadata the orchestrator can use while planning tool calls, including each registered tool."
       }
     ]
   };
@@ -241,6 +252,10 @@ export async function runTool(
       return listCapabilities();
     case "explain_guardrails":
       return explainGuardrails();
+    case "kb_lookup":
+      return runKnowledgeBaseLookup(input);
+    case "todo_manager":
+      return runTodoManager(input);
     default:
       return {
         ok: false,

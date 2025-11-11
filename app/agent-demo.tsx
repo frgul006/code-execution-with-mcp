@@ -14,7 +14,7 @@ import type {
 import type { ToolRunResponse } from "@/lib/tools";
 
 const DEFAULT_PROMPT =
-  "Write a short script that fetches the available capabilities, summarize them, and explain how you decided on each tool call.";
+  "Use kb_lookup to gather guidance about dry-run planning, summarize the findings, and then add a follow-up reminder via todo_manager. Narrate how each tool informed your workflow.";
 
 type ToolTimelineEvent = Extract<
   AgentStreamEvent,

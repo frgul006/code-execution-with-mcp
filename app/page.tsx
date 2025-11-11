@@ -48,7 +48,16 @@ const defaultInputs: Record<string, string> = {
   "code": "const numbers = [1, 2, 3, 4];\\nconst doubled = numbers.map((n) => n * 2);\\nconsole.log('Doubled values:', doubled);\\nreturn doubled.reduce((acc, value) => acc + value, 0);"
 }`,
   list_capabilities: `{}`,
-  explain_guardrails: `{}`
+  explain_guardrails: `{}`,
+  kb_lookup: `{
+  "query": "dry-run",
+  "tags": ["planning"],
+  "topK": 2
+}`,
+  todo_manager: `{
+  "action": "list",
+  "filter": "pending"
+}`
 };
 
 const scenarioSteps = [
