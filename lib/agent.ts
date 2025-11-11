@@ -1,4 +1,3 @@
-import { experimental_StreamData, StreamingTextResponse } from "ai";
 import { runTool, tools, type ToolRunResponse } from "./tools";
 
 const ANTHROPIC_API_URL =
@@ -73,6 +72,16 @@ type StreamTurnResult = {
 
 const textEncoder = new TextEncoder();
 
+export type AgentStreamEvent =
+  | { type: "assistant-delta"; text: string }
+  | { type: "message"; message: AgentMessage }
+  | { type: "tool-request"; id: string; name: string }
+  | { type: "tool-call"; id: string; name: string; input: Record<string, unknown> }
+  | { type: "tool-result"; id: string; ok: boolean; payload: ToolRunResponse }
+  | { type: "session"; session: AgentSession }
+  | { type: "error"; message: string }
+  | { type: "done" };
+
 function parseEvent(raw: string): AnthropicEvent | null {
   const lines = raw.split("\n");
   let event = "";
@@ -132,12 +141,10 @@ function renderToolResult(result: ToolRunResponse): string {
   );
 }
 
-type StreamData = InstanceType<typeof experimental_StreamData>;
-
 async function streamClaudeTurn(
   messages: AgentMessage[],
-  controller: ReadableStreamDefaultController<Uint8Array>,
-  data: StreamData
+  emitText: (text: string) => void,
+  emitEvent: (event: AgentStreamEvent) => void
 ): Promise<StreamTurnResult> {
   const response = await fetch(ANTHROPIC_API_URL, {
     method: "POST",
@@ -211,7 +218,7 @@ async function streamClaudeTurn(
               input: {}
             };
             pendingToolInputs.set(index, { id, name, buffer: "" });
-            data.append({
+            emitEvent({
               type: "tool-request",
               id,
               name
@@ -233,7 +240,7 @@ async function streamClaudeTurn(
               block.text += text;
             }
             if (text) {
-              controller.enqueue(textEncoder.encode(text));
+              emitText(text);
             }
           } else if (delta.type === "input_json_delta") {
             const partial = String(delta.partial_json ?? "");
@@ -308,8 +315,10 @@ async function streamClaudeTurn(
   return { assistantMessage, toolCalls };
 }
 
-export async function createAgentResponse({ prompt, session }: AgentRequest) {
-  const data = new experimental_StreamData();
+export async function createAgentResponse({
+  prompt,
+  session
+}: AgentRequest): Promise<Response> {
   const sessionId = session?.id ?? crypto.randomUUID();
   const conversation: AgentMessage[] = [...(session?.messages ?? [])];
 
@@ -319,27 +328,39 @@ export async function createAgentResponse({ prompt, session }: AgentRequest) {
   };
 
   conversation.push(userMessage);
-  data.append({ type: "message", message: userMessage });
-
   const stream = new ReadableStream<Uint8Array>({
     async start(controller) {
+      const sendEvent = (event: AgentStreamEvent) => {
+        controller.enqueue(textEncoder.encode(`${JSON.stringify(event)}\n`));
+      };
+
       try {
+        sendEvent({ type: "message", message: userMessage });
+
         while (true) {
           const { assistantMessage, toolCalls } = await streamClaudeTurn(
             conversation,
-            controller,
-            data
+            (chunk) => {
+              if (chunk) {
+                sendEvent({ type: "assistant-delta", text: chunk });
+              }
+            },
+            (event) => {
+              if (event.type !== "assistant-delta") {
+                sendEvent(event);
+              }
+            }
           );
 
           conversation.push(assistantMessage);
-          data.append({ type: "message", message: assistantMessage });
+          sendEvent({ type: "message", message: assistantMessage });
 
           if (toolCalls.length === 0) {
             break;
           }
 
           for (const call of toolCalls) {
-            data.append({
+            sendEvent({
               type: "tool-call",
               id: call.id,
               name: call.name,
@@ -348,7 +369,7 @@ export async function createAgentResponse({ prompt, session }: AgentRequest) {
 
             const result = await runTool(call.name, call.input);
 
-            data.append({
+            sendEvent({
               type: "tool-result",
               id: call.id,
               ok: result.ok,
@@ -367,29 +388,35 @@ export async function createAgentResponse({ prompt, session }: AgentRequest) {
             };
 
             conversation.push(toolMessage);
-            data.append({ type: "message", message: toolMessage });
+            sendEvent({ type: "message", message: toolMessage });
           }
         }
 
-        data.append({
+        sendEvent({
           type: "session",
           session: {
             id: sessionId,
             messages: conversation
           }
         });
+        sendEvent({ type: "done" });
       } catch (error) {
+        sendEvent({
+          type: "error",
+          message: error instanceof Error ? error.message : "Unknown agent error"
+        });
         controller.error(error);
       } finally {
         controller.close();
-        data.close();
       }
     }
   });
 
-  return {
-    response: new StreamingTextResponse(stream, {
-      data
-    })
-  };
+  return new Response(stream, {
+    headers: {
+      "Content-Type": "application/x-ndjson",
+      "Cache-Control": "no-cache, no-transform",
+      Connection: "keep-alive"
+    }
+  });
 }

@@ -23,7 +23,7 @@ export async function POST(request: Request) {
   }
 
   try {
-    const { response } = await createAgentResponse(payload);
+    const response = await createAgentResponse(payload);
     return response;
   } catch (error) {
     console.error("Failed to run Claude agent", error);

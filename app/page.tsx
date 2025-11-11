@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import AgentDemo from "./agent-demo";
 
 type ToolSummary = {
   name: string;
@@ -258,6 +259,22 @@ export default function Home() {
             ) : null}
           </div>
         )}
+      </section>
+
+      <section>
+        <span className="badge">Claude Code Agent</span>
+        <h2>Agent workflow showcase</h2>
+        <p>
+          This live demo streams the <strong>Vercel AI SDK</strong> working in tandem with the
+          Claude Code Agent. Watch how the model plans a response, requests tools from the MCP
+          host, executes generated code, and stitches the results back into the transcript.
+        </p>
+        <p>
+          Prompts are chained together using persistent session state so you can iterate like an
+          engineer pair-programming with Claude. Tool calls, intermediate snippets, and final
+          answers appear in real time below.
+        </p>
+        <AgentDemo />
       </section>
 
       <section>
